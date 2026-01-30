@@ -94,6 +94,22 @@ class LabelName(StrEnum):
     MEDIA = "media"  # rj45, sfp
     LINK_SPEED = "link_speed"  # 10, 100, 1000, etc in Mbps
 
+    # Uplink specific
+    INTERFACE = "interface"  # wan1, wan2, cellular
+    PUBLIC_IP = "public_ip"  # Public-facing IP address
+    PROVIDER = "provider"  # Network provider/ISP
+    CONNECTION_TYPE = "connection_type"  # Cellular connection type (4G, LTE, etc.)
+    HA_ROLE = "ha_role"  # High availability role (primary, spare)
+    DESTINATION_IP = "destination_ip"  # Destination IP for loss/latency measurements
+
+    # VPN specific
+    PEER_NETWORK_ID = "peer_network_id"  # VPN peer network ID
+    PEER_NETWORK_NAME = "peer_network_name"  # VPN peer network name
+    VPN_MODE = "vpn_mode"  # VPN mode (hub, spoke, none)
+    REACHABILITY = "reachability"  # VPN peer reachability status
+    SENDER_UPLINK = "sender_uplink"  # Sender uplink interface
+    RECEIVER_UPLINK = "receiver_uplink"  # Receiver uplink interface
+
     # Collector infrastructure labels
     COLLECTOR = "collector"  # Collector name
     TIER = "tier"  # Collection tier (fast/medium/slow)

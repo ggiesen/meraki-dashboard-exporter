@@ -142,6 +142,7 @@ class DeviceCollector(MetricCollector):
 
         # Initialize sub-collector metrics (only for collectors without their own __init__)
         self.ms_collector._initialize_metrics()
+        self.mx_collector._initialize_metrics()
 
         # Initialize port overview metrics here since they're org-level
         self._ms_ports_active_total = self._create_gauge(
@@ -623,6 +624,17 @@ class DeviceCollector(MetricCollector):
                 # Use MS collector for all MS-specific metrics
                 await self._collect_ms_specific_metrics(org_id, org_name, devices)
 
+            # Collect MX-specific metrics (includes MX, MG, and Z series for uplinks)
+            if any(
+                d
+                for d in devices
+                if d.get("model", "").startswith(DeviceType.MX)
+                or d.get("model", "").startswith(DeviceType.MG)
+                or d.get("model", "").startswith("Z")
+            ):
+                # Use MX collector for all MX-specific metrics
+                await self._collect_mx_specific_metrics(org_id, org_name, devices)
+
         except Exception as e:
             logger.exception(
                 "Failed to collect devices for organization",
@@ -769,6 +781,67 @@ class DeviceCollector(MetricCollector):
         except Exception:
             logger.exception(
                 "Failed to collect MS-specific metrics",
+                org_id=org_id,
+            )
+
+    @trace_method("collect.mx_metrics")
+    async def _collect_mx_specific_metrics(
+        self, org_id: str, org_name: str, devices: list[dict[str, Any]]
+    ) -> None:
+        """Collect MX-specific organization-wide metrics.
+
+        Parameters
+        ----------
+        org_id : str
+            Organization ID.
+        org_name : str
+            Organization name.
+        devices : list[dict[str, Any]]
+            All devices in the organization.
+
+        """
+        try:
+            # Collect uplink status metrics (includes MX, MG, and Z series)
+            try:
+                await self.mx_collector.collect_uplink_statuses(
+                    org_id, org_name, self._device_lookup
+                )
+            except Exception:
+                logger.exception("Failed to collect uplink statuses")
+
+            # Collect VPN status metrics
+            try:
+                await self.mx_collector.collect_vpn_statuses(org_id, org_name)
+            except Exception:
+                logger.exception("Failed to collect VPN statuses")
+
+            # Collect VPN performance statistics
+            try:
+                await self.mx_collector.collect_vpn_stats(org_id, org_name)
+            except Exception:
+                logger.exception("Failed to collect VPN stats")
+
+            # Collect device performance scores
+            try:
+                await self.mx_collector.collect_device_performance(org_id, org_name, devices)
+            except Exception:
+                logger.exception("Failed to collect MX device performance")
+
+            # Collect uplink usage metrics
+            try:
+                await self.mx_collector.collect_uplink_usage(org_id, org_name)
+            except Exception:
+                logger.exception("Failed to collect uplink usage")
+
+            # Collect loss and latency metrics
+            try:
+                await self.mx_collector.collect_loss_and_latency(org_id, org_name, devices)
+            except Exception:
+                logger.exception("Failed to collect loss and latency")
+
+        except Exception:
+            logger.exception(
+                "Failed to collect MX-specific metrics",
                 org_id=org_id,
             )
 

@@ -198,6 +198,48 @@ class MRMetricName(StrEnum):
     MR_SSID_CLIENT_COUNT = "meraki_mr_ssid_client_count"
 
 
+class MXMetricName(StrEnum):
+    """MX (Security Appliance) specific metric names."""
+
+    # Uplink status metrics
+    MX_UPLINK_STATUS = "meraki_mx_uplink_status"
+    MX_UPLINK_INFO = "meraki_mx_uplink_info"
+
+    # Cellular signal metrics
+    MX_UPLINK_SIGNAL_RSRP = "meraki_mx_uplink_signal_rsrp"
+    MX_UPLINK_SIGNAL_RSRQ = "meraki_mx_uplink_signal_rsrq"
+
+    # High availability metrics
+    MX_HA_ENABLED = "meraki_mx_ha_enabled"
+    MX_HA_INFO = "meraki_mx_ha_info"
+
+    # VPN status metrics
+    MX_VPN_PEER_STATUS = "meraki_mx_vpn_peer_status"
+    MX_VPN_MODE_INFO = "meraki_mx_vpn_mode_info"
+    MX_VPN_EXPORTED_SUBNETS_TOTAL = "meraki_mx_vpn_exported_subnets_total"
+
+    # VPN performance metrics
+    MX_VPN_LATENCY_MS = "meraki_mx_vpn_latency_ms"
+    MX_VPN_LOSS_PERCENT = "meraki_mx_vpn_loss_percent"
+    MX_VPN_JITTER_MS = "meraki_mx_vpn_jitter_ms"
+    MX_VPN_MOS = "meraki_mx_vpn_mos"
+    MX_VPN_USAGE_SENT_BYTES = "meraki_mx_vpn_usage_sent_bytes"
+    MX_VPN_USAGE_RECEIVED_BYTES = "meraki_mx_vpn_usage_received_bytes"
+
+    # Device performance metrics
+    MX_PERFORMANCE_SCORE = "meraki_mx_performance_score"
+
+    # Uplink usage metrics
+    MX_UPLINK_SENT_BYTES = "meraki_mx_uplink_sent_bytes"
+    MX_UPLINK_RECEIVED_BYTES = "meraki_mx_uplink_received_bytes"
+
+    # Loss and latency metrics
+    MX_UPLINK_LOSS_PERCENT = "meraki_mx_uplink_loss_percent"
+    MX_UPLINK_LATENCY_MS = "meraki_mx_uplink_latency_ms"
+    MX_UPLINK_JITTER_MS = "meraki_mx_uplink_jitter_ms"
+    MX_UPLINK_GOODPUT_KBPS = "meraki_mx_uplink_goodput_kbps"
+
+
 class MVMetricName(StrEnum):
     """MV (Camera) specific metric names."""
 
