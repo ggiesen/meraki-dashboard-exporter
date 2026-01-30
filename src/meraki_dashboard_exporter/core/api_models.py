@@ -534,3 +534,46 @@ class PaginatedResponse(BaseModel):
     meta: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+# Organization-level switch packet statistics models
+class PacketCountRatePerSec(BaseModel):
+    """Packet rate per second values."""
+
+    total: float = 0.0
+    sent: float = 0.0
+    recv: float = 0.0
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PacketCount(BaseModel):
+    """Packet count for a specific packet type."""
+
+    desc: str  # e.g., "Total", "Broadcast", "Multicast"
+    total: int = 0
+    sent: int = 0
+    recv: int = 0
+    ratePerSec: PacketCountRatePerSec | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class OrgSwitchPortPackets(BaseModel):
+    """Port packet statistics from org-level endpoint."""
+
+    portId: str
+    packets: list[PacketCount] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class OrgSwitchDevicePackets(BaseModel):
+    """Device packet statistics from org-level endpoint."""
+
+    serial: str
+    name: str | None = None
+    network: dict[str, str] | None = None  # {"id": "...", "name": "..."}
+    ports: list[OrgSwitchPortPackets] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")

@@ -118,27 +118,12 @@ class APISettings(BaseModel):
         le=300.0,
         description="Maximum delay between batches when smoothing",
     )
-    ms_port_status_use_org_endpoint: bool = Field(
-        True,
-        description="Use org-level switch port status endpoint for MS status metrics",
-    )
-    ms_port_usage_interval: int = Field(
-        600,
-        ge=0,
-        le=3600,
-        description="Minimum seconds between per-switch port usage/POE refreshes",
-    )
-    ms_packet_stats_interval: int = Field(
-        600,
-        ge=0,
-        le=3600,
-        description="Minimum seconds between per-switch packet stats refreshes",
-    )
-    client_app_usage_interval: int = Field(
-        600,
-        ge=0,
-        le=3600,
-        description="Minimum seconds between client application usage refreshes",
+    ms_skip_snmp_available_metrics: bool = Field(
+        False,
+        description="Skip MS metrics that are also available via SNMP. "
+        "Includes: port status, port traffic, port usage, packet counts (Total/Broadcast/Multicast), "
+        "and error counters (CRC/Fragments/Collisions/Topology). "
+        "Enable this if you're already collecting these via SNMP to reduce API calls and avoid duplicates.",
     )
 
 

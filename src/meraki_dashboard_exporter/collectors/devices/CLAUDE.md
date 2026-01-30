@@ -74,10 +74,16 @@ async def _collect_wireless_metrics(self, org_id: str, devices: list[Device]) ->
 - **API**: Uses `wireless` controller endpoints
 
 ### MS (Switches)
-- **Port status**: Individual port up/down status
-- **PoE**: Power over Ethernet usage and status
-- **Cable diagnostics**: Cable health and performance
+- **Port status**: Individual port up/down status (SNMP: ifOperStatus)
+- **Port traffic**: Traffic rates in bytes/sec (SNMP: ifInOctets/ifOutOctets)
+- **Packet stats**: Total/Broadcast/Multicast counts and rates (SNMP: ifInUcastPkts/ifInBroadcastPkts)
+- **Error metrics**: CRC errors, fragments, collisions, topology changes (SNMP: dot3Stats*)
+- **PoE**: Power over Ethernet usage and status (NOT in standard SNMP)
+- **Client count**: Clients per port (NOT available via SNMP)
+- **STP**: Spanning tree priorities per network
 - **API**: Uses `switch` controller endpoints
+- **Optimization**: Uses org-level bulk endpoints for port status and basic packet stats
+- **SNMP skip**: Set `ms_skip_snmp_available_metrics=True` to skip metrics available via SNMP
 
 ### MX (Security Appliances)
 - **VPN status**: Site-to-site VPN tunnel health
@@ -211,6 +217,41 @@ class MSCollector(BaseDeviceCollector):
 6. **Add device constants**: Update device_constants.py if needed
 7. **Create tests**: With device factories and metric assertions
 </workflow>
+
+<optimization_patterns>
+## MS HYBRID COLLECTION PATTERN
+The MS collector uses a hybrid approach for packet statistics:
+
+1. **Org-level endpoint** (`getOrganizationSwitchPortsStatusesPacketsByDeviceByPort`):
+   - Collects basic stats: Total, Broadcast, Multicast packets
+   - Single API call for all switches in the org
+   - Automatically used when available in SDK
+
+2. **Per-device endpoint** (`getDeviceSwitchPortsStatusesPackets`):
+   - Collects error metrics: CRC errors, Fragments, Collisions, Topology changes
+   - Required because org-level endpoint doesn't include error stats
+   - Skipped entirely if `ms_skip_snmp_available_metrics=True`
+
+This reduces API calls by ~43% while maintaining access to all metrics.
+
+## SNMP METRIC EQUIVALENCE
+When `ms_skip_snmp_available_metrics=True`, these metrics are skipped:
+
+| Meraki Metric | SNMP Equivalent |
+|---------------|-----------------|
+| Port status | ifOperStatus |
+| Port traffic | ifInOctets/ifOutOctets (rate) |
+| Port usage | ifInOctets/ifOutOctets (counter) |
+| Total packets | ifInUcastPkts + ifInNUcastPkts |
+| Broadcast packets | ifInBroadcastPkts |
+| Multicast packets | ifInMulticastPkts |
+| CRC errors | dot3StatsFCSErrors |
+| Collisions | dot3StatsDeferredTransmissions |
+
+Metrics ALWAYS collected (not in SNMP):
+- Client count per port
+- PoE power consumption
+</optimization_patterns>
 
 <api_quirks>
 ## MERAKI API DEVICE-SPECIFIC LIMITATIONS

@@ -487,56 +487,18 @@ class DeviceCollector(MetricCollector):
                 max_delay = self.settings.api.smoothing_max_batch_delay
                 used_fallback = False
 
-                if self.settings.api.ms_port_status_use_org_endpoint:
-                    status_result = await self.ms_collector.collect_port_statuses_by_switch(
-                        org_id,
-                        org_name,
-                        ms_devices,
-                    )
-                    if not status_result:
-                        used_fallback = True
-                        logger.warning(
-                            "Org-level switch port status collection failed; falling back to per-device status",
-                            org_id=org_id,
-                        )
-                        await process_in_batches_with_errors(
-                            ms_devices,
-                            self._collect_ms_device_with_timeout,
-                            batch_size=self.settings.api.device_batch_size,
-                            delay_between_batches=self.settings.api.batch_delay,
-                            spread_over_seconds=spread_window,
-                            initial_delay=self._get_smoothing_offset(f"{org_id}:ms_devices"),
-                            min_batch_delay=min_delay,
-                            max_batch_delay=max_delay,
-                            item_description="MS device",
-                            error_context_func=lambda device: {"serial": device["serial"]},
-                        )
-
-                    if not used_fallback:
-                        usage_devices = [
-                            device
-                            for device in ms_devices
-                            if self.ms_collector._should_collect_port_usage(
-                                device.get("serial", "")
-                            )
-                        ]
-
-                        if usage_devices:
-                            await process_in_batches_with_errors(
-                                usage_devices,
-                                self.ms_collector.collect_device_port_usage_metrics,
-                                batch_size=self.settings.api.device_batch_size,
-                                delay_between_batches=self.settings.api.batch_delay,
-                                spread_over_seconds=spread_window,
-                                initial_delay=self._get_smoothing_offset(f"{org_id}:ms_usage"),
-                                min_batch_delay=min_delay,
-                                max_batch_delay=max_delay,
-                                item_description="MS port usage",
-                                error_context_func=lambda device: {"serial": device["serial"]},
-                            )
-                else:
-                    # Process devices in batches (configurable via device_batch_size)
+                # Always try org-level endpoint first with automatic fallback
+                status_result = await self.ms_collector.collect_port_statuses_by_switch(
+                    org_id,
+                    org_name,
+                    ms_devices,
+                )
+                if not status_result:
                     used_fallback = True
+                    logger.warning(
+                        "Org-level switch port status collection failed; falling back to per-device status",
+                        org_id=org_id,
+                    )
                     await process_in_batches_with_errors(
                         ms_devices,
                         self._collect_ms_device_with_timeout,
@@ -550,8 +512,21 @@ class DeviceCollector(MetricCollector):
                         error_context_func=lambda device: {"serial": device["serial"]},
                     )
 
-                # Collect packet statistics with smoothing and interval gating
                 if not used_fallback:
+                    await process_in_batches_with_errors(
+                        ms_devices,
+                        self.ms_collector.collect_device_port_usage_metrics,
+                        batch_size=self.settings.api.device_batch_size,
+                        delay_between_batches=self.settings.api.batch_delay,
+                        spread_over_seconds=spread_window,
+                        initial_delay=self._get_smoothing_offset(f"{org_id}:ms_usage"),
+                        min_batch_delay=min_delay,
+                        max_batch_delay=max_delay,
+                        item_description="MS port usage",
+                        error_context_func=lambda device: {"serial": device["serial"]},
+                    )
+
+                    # Collect packet statistics
                     await process_in_batches_with_errors(
                         ms_devices,
                         self.ms_collector._collect_packet_statistics,
@@ -771,6 +746,19 @@ class DeviceCollector(MetricCollector):
 
         """
         try:
+            # Filter to MS devices only
+            ms_devices = [d for d in devices if d.get("model", "").startswith("MS")]
+
+            # Collect org-level packet statistics (hybrid mode)
+            # This collects Total/Broadcast/Multicast packets for all switches at once
+            # Error metrics (CRC, Fragments, Collisions, Topology) are still per-device
+            try:
+                await self.ms_collector.collect_packet_stats_by_org(
+                    org_id, org_name, ms_devices
+                )
+            except Exception:
+                logger.exception("Failed to collect org-level packet stats")
+
             # Collect STP metrics
             try:
                 await self.ms_collector.collect_stp_priorities(

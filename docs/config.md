@@ -63,6 +63,17 @@ Configuration for Meraki API interactions
 | `MERAKI_EXPORTER_API__RATE_LIMIT_RETRY_WAIT` | `int` | `5` | Wait time in seconds when rate limited (min: 1, max: 60) |
 | `MERAKI_EXPORTER_API__ACTION_BATCH_RETRY_WAIT` | `int` | `10` | Wait time for action batch retries (min: 1, max: 60) |
 
+### MS (Switch) Optimization Settings
+
+These settings optimize API usage for Meraki switch (MS) metrics collection:
+
+| Environment Variable | Type | Default | Description |
+|---------------------|------|---------|-------------|
+| `MERAKI_EXPORTER_API__MS_SKIP_SNMP_AVAILABLE_METRICS` | `bool` | `False` | Skip MS metrics also available via SNMP to reduce API calls |
+
+!!! tip "SNMP Integration"
+    If you're already collecting switch metrics via SNMP, enable `MS_SKIP_SNMP_AVAILABLE_METRICS` to avoid duplicate data and reduce API calls by up to 71%. Metrics skipped include: port status, port traffic, port usage, packet counts, and error counters. Metrics NOT available via SNMP (client count per port, PoE power) are always collected.
+
 ## Update Intervals
 
 Control how often different types of metrics are collected

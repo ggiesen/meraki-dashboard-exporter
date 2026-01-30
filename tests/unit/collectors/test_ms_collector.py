@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from prometheus_client import Gauge
@@ -30,6 +30,12 @@ class TestMSCollector:
         parent = MagicMock()
         parent.api = mock_api
         parent.settings = MagicMock()
+        parent.settings.api.ms_skip_snmp_available_metrics = False  # Enable SNMP metrics for tests
+
+        # Mock the rate_limiter with an async acquire method
+        rate_limiter = MagicMock()
+        rate_limiter.acquire = AsyncMock(return_value=0.0)
+        parent.rate_limiter = rate_limiter
 
         # Mock the _create_gauge method to return actual Gauge objects
         def create_gauge(name, description, labelnames):
@@ -249,7 +255,7 @@ class TestMSCollector:
         mock_api.switch.getNetworkSwitchStp = MagicMock(side_effect=get_network_stp)
 
         # Run collection
-        await ms_collector.collect_stp_priorities("org123", device_lookup)
+        await ms_collector.collect_stp_priorities("org123", "Test Org", device_lookup)
 
         # Verify API calls
         mock_api.organizations.getOrganizationNetworks.assert_called_once_with(
@@ -282,7 +288,7 @@ class TestMSCollector:
         mock_api.switch.getNetworkSwitchStp = MagicMock(side_effect=Exception("API Error"))
 
         # Should not raise due to error handling
-        await ms_collector.collect_stp_priorities("org123", {})
+        await ms_collector.collect_stp_priorities("org123", "Test Org", {})
 
     async def test_new_metrics_collection(
         self,

@@ -616,12 +616,6 @@ class CollectorManager:
                 "burst": self.settings.api.rate_limit_burst,
                 "share_fraction": self.settings.api.rate_limit_shared_fraction,
             },
-            "endpoint_intervals": {
-                "ms_port_usage_interval": self.settings.api.ms_port_usage_interval,
-                "ms_packet_stats_interval": self.settings.api.ms_packet_stats_interval,
-                "client_app_usage_interval": self.settings.api.client_app_usage_interval,
-                "ms_port_status_org_endpoint": self.settings.api.ms_port_status_use_org_endpoint,
-            },
         }
 
     def register_collector(self, collector: MetricCollector) -> None:

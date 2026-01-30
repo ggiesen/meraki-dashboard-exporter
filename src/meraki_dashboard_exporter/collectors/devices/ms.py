@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import TYPE_CHECKING, Any
 
 from ...core.constants import MSMetricName
@@ -35,9 +34,10 @@ class MSCollector(BaseDeviceCollector):
 
         """
         super().__init__(parent)
-        self._last_port_usage: dict[str, float] = {}
-        self._last_packet_stats: dict[str, float] = {}
         self._org_port_status_supported: bool | None = None
+        self._org_packet_stats_supported: bool | None = None
+        # Track which serials have had basic stats collected via org endpoint
+        self._org_packet_stats_collected: set[str] = set()
 
     def _initialize_metrics(self) -> None:
         """Initialize MS-specific metrics."""
@@ -305,26 +305,6 @@ class MSCollector(BaseDeviceCollector):
             labelnames=packet_labels,
         )
 
-    def _should_collect_port_usage(self, serial: str) -> bool:
-        interval = self.settings.api.ms_port_usage_interval
-        if interval <= 0:
-            return True
-        last = self._last_port_usage.get(serial, 0.0)
-        return (time.time() - last) >= interval
-
-    def _mark_port_usage_collected(self, serial: str) -> None:
-        self._last_port_usage[serial] = time.time()
-
-    def _should_collect_packet_stats(self, serial: str) -> bool:
-        interval = self.settings.api.ms_packet_stats_interval
-        if interval <= 0:
-            return True
-        last = self._last_packet_stats.get(serial, 0.0)
-        return (time.time() - last) >= interval
-
-    def _mark_packet_stats_collected(self, serial: str) -> None:
-        self._last_packet_stats[serial] = time.time()
-
     @log_api_call("getOrganizationSwitchPortsStatusesBySwitch")
     @with_error_handling(
         operation="Collect MS switch port statuses (org)",
@@ -337,6 +317,14 @@ class MSCollector(BaseDeviceCollector):
         devices: list[dict[str, Any]],
     ) -> bool:
         """Collect port status metrics using the org-level switch endpoint."""
+        # Skip if SNMP-available metrics are disabled (port status is SNMP ifOperStatus)
+        if self.settings.api.ms_skip_snmp_available_metrics:
+            logger.debug(
+                "Skipping org-level port statuses (SNMP metrics disabled)",
+                org_id=org_id,
+            )
+            return True  # Return True to skip per-device fallback as well
+
         if self._org_port_status_supported is None:
             self._org_port_status_supported = hasattr(
                 self.api.switch,
@@ -408,6 +396,171 @@ class MSCollector(BaseDeviceCollector):
 
         return True
 
+    @log_api_call("getOrganizationSwitchPortsStatusesPacketsByDeviceByPort")
+    @with_error_handling(
+        operation="Collect MS packet stats (org)",
+        continue_on_error=True,
+    )
+    async def collect_packet_stats_by_org(
+        self,
+        org_id: str,
+        org_name: str,
+        devices: list[dict[str, Any]],
+    ) -> bool:
+        """Collect packet statistics using the org-level endpoint.
+
+        This endpoint provides Total, Broadcast, and Multicast packet stats
+        but NOT error metrics (CRC, Fragments, Collisions, Topology changes).
+
+        Parameters
+        ----------
+        org_id : str
+            Organization ID.
+        org_name : str
+            Organization name.
+        devices : list[dict[str, Any]]
+            List of MS devices.
+
+        Returns
+        -------
+        bool
+            True if org-level collection succeeded, False if fallback needed.
+
+        """
+        # Skip if SNMP-available metrics are disabled (all packet stats are SNMP-available)
+        if self.settings.api.ms_skip_snmp_available_metrics:
+            logger.debug(
+                "Skipping org-level packet stats (SNMP metrics disabled)",
+                org_id=org_id,
+            )
+            return True  # Return True to skip per-device fallback as well
+
+        # Check if endpoint is available in SDK
+        if self._org_packet_stats_supported is None:
+            self._org_packet_stats_supported = hasattr(
+                self.api.switch,
+                "getOrganizationSwitchPortsStatusesPacketsByDeviceByPort",
+            )
+            if not self._org_packet_stats_supported:
+                logger.warning(
+                    "Org-level switch packet stats endpoint not available in SDK; "
+                    "falling back to per-device collection",
+                    org_id=org_id,
+                )
+
+        if not self._org_packet_stats_supported:
+            return False
+
+        device_lookup = {device.get("serial"): device for device in devices}
+        serials = [device.get("serial") for device in devices if device.get("serial")]
+        if not serials:
+            return True
+
+        # Clear the set at the start of each collection cycle
+        self._org_packet_stats_collected.clear()
+
+        with LogContext(org_id=org_id):
+            response = await asyncio.to_thread(
+                self.api.switch.getOrganizationSwitchPortsStatusesPacketsByDeviceByPort,
+                org_id,
+                serials=serials,
+                timespan=300,  # 5-minute window
+                perPage=20,
+                total_pages="all",
+            )
+            device_packets = validate_response_format(
+                response,
+                expected_type=list,
+                operation="getOrganizationSwitchPortsStatusesPacketsByDeviceByPort",
+            )
+
+        # Mapping of descriptions to count and rate metrics
+        # Only include metrics available from org-level endpoint
+        basic_metric_map = {
+            "Total": (self._switch_port_packets_total, self._switch_port_packets_rate_total),
+            "Broadcast": (
+                self._switch_port_packets_broadcast,
+                self._switch_port_packets_rate_broadcast,
+            ),
+            "Multicast": (
+                self._switch_port_packets_multicast,
+                self._switch_port_packets_rate_multicast,
+            ),
+        }
+
+        for device_data in device_packets:
+            serial = device_data.get("serial")
+            if not serial:
+                continue
+
+            device_info = device_lookup.get(serial, {})
+            network = device_data.get("network", {}) or {}
+            network_id = network.get("id", device_info.get("networkId", ""))
+            network_name = network.get("name", device_info.get("networkName", network_id))
+
+            device = {
+                "serial": serial,
+                "name": device_data.get("name", device_info.get("name", serial)),
+                "model": device_info.get("model", ""),
+                "networkId": network_id,
+                "networkName": network_name,
+                "orgId": org_id,
+                "orgName": org_name,
+            }
+
+            for port_data in device_data.get("ports", []) or []:
+                port_id = port_data.get("portId", "")
+                port = {"portId": port_id, "name": port_id}
+
+                for packet_type in port_data.get("packets", []) or []:
+                    desc = packet_type.get("desc", "")
+
+                    if desc in basic_metric_map:
+                        count_metric, rate_metric = basic_metric_map[desc]
+
+                        # Total counts
+                        total = packet_type.get("total", 0)
+                        sent = packet_type.get("sent", 0)
+                        recv = packet_type.get("recv", 0)
+
+                        # Create port labels for each direction
+                        total_labels = create_port_labels(
+                            device, port, org_id=org_id, org_name=org_name, direction="total"
+                        )
+                        sent_labels = create_port_labels(
+                            device, port, org_id=org_id, org_name=org_name, direction="sent"
+                        )
+                        recv_labels = create_port_labels(
+                            device, port, org_id=org_id, org_name=org_name, direction="recv"
+                        )
+
+                        # Set count metrics
+                        count_metric.labels(**total_labels).set(total)
+                        count_metric.labels(**sent_labels).set(sent)
+                        count_metric.labels(**recv_labels).set(recv)
+
+                        # Rate per second
+                        rate_data = packet_type.get("ratePerSec", {}) or {}
+                        rate_total = rate_data.get("total", 0)
+                        rate_sent = rate_data.get("sent", 0)
+                        rate_recv = rate_data.get("recv", 0)
+
+                        # Set rate metrics
+                        rate_metric.labels(**total_labels).set(rate_total)
+                        rate_metric.labels(**sent_labels).set(rate_sent)
+                        rate_metric.labels(**recv_labels).set(rate_recv)
+
+            # Track that we collected basic stats for this device
+            self._org_packet_stats_collected.add(serial)
+
+        logger.debug(
+            "Collected org-level packet statistics",
+            org_id=org_id,
+            device_count=len(device_packets),
+        )
+
+        return True
+
     @trace_method("process.device")
     @log_api_call("getDeviceSwitchPortsStatuses")
     @with_error_handling(
@@ -426,6 +579,9 @@ class MSCollector(BaseDeviceCollector):
         # Extract org info from device data
         org_id = device.get("orgId", "")
         org_name = device.get("orgName", org_id)
+
+        # Check if SNMP-available metrics should be skipped
+        skip_snmp_metrics = self.settings.api.ms_skip_snmp_available_metrics
 
         # Create standard device labels
         device_labels = create_device_labels(device, org_id=org_id, org_name=org_name)
@@ -449,12 +605,13 @@ class MSCollector(BaseDeviceCollector):
                     device, port, org_id=org_id, org_name=org_name, link_speed=speed, duplex=duplex
                 )
 
-                # Port status with speed and duplex
-                is_connected = 1 if port.get("status") == "Connected" else 0
-                self._switch_port_status.labels(**port_labels).set(is_connected)
+                # Port status with speed and duplex (SNMP: ifOperStatus)
+                if not skip_snmp_metrics:
+                    is_connected = 1 if port.get("status") == "Connected" else 0
+                    self._switch_port_status.labels(**port_labels).set(is_connected)
 
-                # Traffic counters (rate in bytes per second)
-                if "trafficInKbps" in port:
+                # Traffic counters (rate in bytes per second) (SNMP: ifInOctets/ifOutOctets rate)
+                if not skip_snmp_metrics and "trafficInKbps" in port:
                     traffic_counters = port["trafficInKbps"]
 
                     if "recv" in traffic_counters:
@@ -473,8 +630,8 @@ class MSCollector(BaseDeviceCollector):
                             traffic_counters["sent"] * 1000 / 8  # Convert kbps to bytes/sec
                         )
 
-                # Usage counters (total bytes over timespan)
-                if "usageInKb" in port:
+                # Usage counters (total bytes over timespan) (SNMP: ifInOctets/ifOutOctets)
+                if not skip_snmp_metrics and "usageInKb" in port:
                     usage_counters = port["usageInKb"]
 
                     if "recv" in usage_counters:
@@ -501,7 +658,7 @@ class MSCollector(BaseDeviceCollector):
                             usage_counters["total"] * 1024  # Convert KB to bytes
                         )
 
-                # Client count
+                # Client count (NOT available via SNMP - always collect)
                 client_count = port.get("clientCount", 0)
                 # Use base port labels without direction for client count
                 port_labels_no_extra = create_port_labels(
@@ -537,8 +694,9 @@ class MSCollector(BaseDeviceCollector):
             # Note: POE budget is not available via API, would need a lookup table by model
 
             # Collect packet statistics
-            await self._collect_packet_statistics(device)
-            self._mark_port_usage_collected(device_labels["serial"])
+            # If org-level packet stats were collected for this device, only collect error metrics
+            error_metrics_only = device_labels["serial"] in self._org_packet_stats_collected
+            await self._collect_packet_statistics(device, error_metrics_only=error_metrics_only)
 
         except Exception:
             logger.exception(
@@ -557,17 +715,11 @@ class MSCollector(BaseDeviceCollector):
         if not serial:
             return
 
-        if not self._should_collect_port_usage(serial):
-            logger.debug(
-                "Skipping switch port usage collection",
-                serial=serial,
-                interval_seconds=self.settings.api.ms_port_usage_interval,
-            )
-            return
-
         org_id = device.get("orgId", "")
         org_name = device.get("orgName", org_id)
         device_labels = create_device_labels(device, org_id=org_id, org_name=org_name)
+
+        skip_snmp_metrics = self.settings.api.ms_skip_snmp_available_metrics
 
         with LogContext(serial=device_labels["serial"], name=device_labels["name"]):
             port_statuses = await asyncio.to_thread(
@@ -580,8 +732,8 @@ class MSCollector(BaseDeviceCollector):
             )
 
         for port in port_statuses:
-            # Traffic counters (rate in bytes per second)
-            if "trafficInKbps" in port:
+            # Traffic counters (rate in bytes per second) (SNMP: ifInOctets/ifOutOctets rate)
+            if not skip_snmp_metrics and "trafficInKbps" in port:
                 traffic_counters = port["trafficInKbps"]
 
                 if "recv" in traffic_counters:
@@ -600,8 +752,8 @@ class MSCollector(BaseDeviceCollector):
                         traffic_counters["sent"] * 1000 / 8
                     )
 
-            # Usage counters (total bytes over timespan)
-            if "usageInKb" in port:
+            # Usage counters (total bytes over timespan) (SNMP: ifInOctets/ifOutOctets)
+            if not skip_snmp_metrics and "usageInKb" in port:
                 usage_counters = port["usageInKb"]
 
                 if "recv" in usage_counters:
@@ -624,7 +776,7 @@ class MSCollector(BaseDeviceCollector):
                         usage_counters["total"] * 1024
                     )
 
-            # Client count
+            # Client count (NOT available via SNMP - always collect)
             client_count = port.get("clientCount", 0)
             port_labels_no_extra = create_port_labels(
                 device, port, org_id=org_id, org_name=org_name
@@ -646,7 +798,6 @@ class MSCollector(BaseDeviceCollector):
 
         self._switch_poe_total_power.labels(**device_labels).set(total_poe_consumption)
         self._switch_power.labels(**device_labels).set(total_poe_consumption)
-        self._mark_port_usage_collected(serial)
 
     @log_api_call("getOrganizationNetworks")
     @with_error_handling(
@@ -749,29 +900,30 @@ class MSCollector(BaseDeviceCollector):
         operation="Collect MS packet statistics",
         continue_on_error=True,
     )
-    async def _collect_packet_statistics(self, device: dict[str, Any]) -> None:
+    async def _collect_packet_statistics(
+        self, device: dict[str, Any], error_metrics_only: bool = False
+    ) -> None:
         """Collect packet statistics for a switch.
 
         Parameters
         ----------
         device : dict[str, Any]
             Switch device data.
+        error_metrics_only : bool
+            If True, only collect error metrics (CRC, Fragments, Collisions, Topology).
+            Used in hybrid mode where basic stats come from org-level endpoint.
 
         """
+        # Skip if SNMP-available metrics are disabled (all packet stats are SNMP-available)
+        if self.settings.api.ms_skip_snmp_available_metrics:
+            return
+
         # Extract org info from device data
         org_id = device.get("orgId", "")
         org_name = device.get("orgName", org_id)
 
         # Create standard device labels
         device_labels = create_device_labels(device, org_id=org_id, org_name=org_name)
-        serial = device_labels.get("serial")
-        if serial and not self._should_collect_packet_stats(serial):
-            logger.debug(
-                "Skipping packet statistics collection",
-                serial=serial,
-                interval_seconds=self.settings.api.ms_packet_stats_interval,
-            )
-            return
 
         try:
             # Get packet statistics with 5-minute timespan
@@ -787,17 +939,8 @@ class MSCollector(BaseDeviceCollector):
                     operation="getDeviceSwitchPortsStatusesPackets",
                 )
 
-            # Mapping of API descriptions to metric types
-            metric_map = {
-                "Total": (self._switch_port_packets_total, self._switch_port_packets_rate_total),
-                "Broadcast": (
-                    self._switch_port_packets_broadcast,
-                    self._switch_port_packets_rate_broadcast,
-                ),
-                "Multicast": (
-                    self._switch_port_packets_multicast,
-                    self._switch_port_packets_rate_multicast,
-                ),
+            # Error metrics - always collected via per-device endpoint
+            error_metric_map = {
                 "CRC align errors": (
                     self._switch_port_packets_crcerrors,
                     self._switch_port_packets_rate_crcerrors,
@@ -815,6 +958,29 @@ class MSCollector(BaseDeviceCollector):
                     self._switch_port_packets_rate_topologychanges,
                 ),
             }
+
+            # Basic metrics - only collected if not using hybrid mode
+            basic_metric_map = {
+                "Total": (self._switch_port_packets_total, self._switch_port_packets_rate_total),
+                "Broadcast": (
+                    self._switch_port_packets_broadcast,
+                    self._switch_port_packets_rate_broadcast,
+                ),
+                "Multicast": (
+                    self._switch_port_packets_multicast,
+                    self._switch_port_packets_rate_multicast,
+                ),
+            }
+
+            # Determine which metrics to collect
+            if error_metrics_only:
+                metric_map = error_metric_map
+                logger.debug(
+                    "Collecting error metrics only (hybrid mode)",
+                    serial=device_labels["serial"],
+                )
+            else:
+                metric_map = {**basic_metric_map, **error_metric_map}
 
             for port_data in packet_stats:
                 packets = port_data.get("packets", [])
@@ -863,8 +1029,6 @@ class MSCollector(BaseDeviceCollector):
                 name=device_labels["name"],
                 port_count=len(packet_stats),
             )
-            if serial:
-                self._mark_packet_stats_collected(serial)
 
         except Exception:
             logger.exception(

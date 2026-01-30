@@ -452,27 +452,6 @@
                 </div>
             </div>
 
-            <div class="stats" style="margin-top: 15px;">
-                <div class="stat">
-                    <div class="stat-value">{{ scheduling.endpoint_intervals.ms_port_usage_interval }}s</div>
-                    <div class="stat-label">MS Port Usage</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">{{ scheduling.endpoint_intervals.ms_packet_stats_interval }}s</div>
-                    <div class="stat-label">MS Packet Stats</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">{{ scheduling.endpoint_intervals.client_app_usage_interval }}s</div>
-                    <div class="stat-label">Client App Usage</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">
-                        {% if scheduling.endpoint_intervals.ms_port_status_org_endpoint %}Org{% else %}Device{% endif %}
-                    </div>
-                    <div class="stat-label">MS Port Status Source</div>
-                </div>
-            </div>
-
             <h4 style="margin-top: 20px;">Tier Schedule</h4>
             <table class="collector-table">
                 <thead>

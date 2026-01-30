@@ -174,13 +174,6 @@ def log_startup_summary(
         "  Smoothing Window Cap",
         value=f"{smoothing_cap:.1f}s",
     )
-    log_method(
-        "  Switch/Client Intervals",
-        ms_port_usage_interval=f"{settings.api.ms_port_usage_interval}s",
-        ms_packet_stats_interval=f"{settings.api.ms_packet_stats_interval}s",
-        client_app_usage_interval=f"{settings.api.client_app_usage_interval}s",
-        ms_port_status_org_endpoint=settings.api.ms_port_status_use_org_endpoint,
-    )
 
     if settings.otel.enabled:
         log_method("  OpenTelemetry", status="ENABLED")

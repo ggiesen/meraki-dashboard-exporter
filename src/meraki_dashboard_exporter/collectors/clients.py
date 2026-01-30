@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 
 import structlog
@@ -65,7 +64,6 @@ class ClientsCollector(MetricCollector):
 
         # Initialize DNS stats tracking
         self._last_dns_stats: dict[str, int] | None = None
-        self._last_app_usage_by_network: dict[str, float] = {}
 
     def _initialize_metrics(self) -> None:
         """Initialize Prometheus metrics for client data."""
@@ -864,16 +862,6 @@ class ClientsCollector(MetricCollector):
         if not clients:
             return
 
-        interval = self.settings.api.client_app_usage_interval
-        last_run = self._last_app_usage_by_network.get(network_id, 0.0)
-        if interval > 0 and (time.time() - last_run) < interval:
-            logger.debug(
-                "Skipping client application usage collection",
-                network_id=network_id,
-                interval_seconds=interval,
-            )
-            return
-
         # Extract client IDs
         client_ids = [client.id for client in clients]
 
@@ -972,8 +960,6 @@ class ClientsCollector(MetricCollector):
                 self._track_error(ErrorCategory.API_CLIENT_ERROR)
                 # Continue with next batch
                 continue
-
-        self._last_app_usage_by_network[network_id] = time.time()
 
         logger.info(
             "Completed application usage collection",
