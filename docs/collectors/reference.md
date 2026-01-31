@@ -11,7 +11,7 @@ Collectors run on FAST/MEDIUM/SLOW tiers configured via `MERAKI_EXPORTER_UPDATE_
 
 | Collector | Tier | Purpose | Metrics | Notes |
 |-----------|------|---------|---------|-------|
-| `AlertsCollector` | MEDIUM | Collector for Meraki assurance alerts. | 5 |  |
+| `AlertsCollector` | MEDIUM | Collector for Meraki assurance alerts. | 4 |  |
 | `ClientsCollector` | MEDIUM | Collector for client-level metrics across all networks. | 21 | Requires MERAKI_EXPORTER_CLIENTS__ENABLED=true |
 | `ConfigCollector` | SLOW | Collector for configuration and security settings. | 14 |  |
 | `DeviceCollector` | MEDIUM | Collector for device-level metrics. | 6 |  |

@@ -1212,9 +1212,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (category) (meraki_network_health_alerts_total{org_id=~\"$organization\", network_id=~\"$network\"})",
+          "expr": "sum by (category_type) (meraki_alerts_active{org_id=~\"$organization\", network_id=~\"$network\"})",
           "instant": true,
-          "legendFormat": "{{category}}",
+          "legendFormat": "{{category_type}}",
           "range": false,
           "refId": "A"
         }

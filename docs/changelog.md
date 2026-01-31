@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking Changes
+
+- **alerts:** Removed `meraki_network_health_alerts_total` metric. This metric used the deprecated Meraki API endpoint `getNetworkHealthAlerts` which required one API call per network. The same alert data is available through the `meraki_alerts_active` metric (which uses the efficient org-level `getOrganizationAssuranceAlerts` endpoint requiring only one call per organization) with the `category_type` label instead of `category`.
+
+  **Migration:** Update any dashboards or alerting rules that use `meraki_network_health_alerts_total` to use `meraki_alerts_active` with appropriate label filters. For example:
+  ```promql
+  # Old (removed)
+  sum by (category) (meraki_network_health_alerts_total{...})
+
+  # New (use this instead)
+  sum by (category_type) (meraki_alerts_active{...})
+  ```
+
+### Performance Improvements
+
+- **alerts:** Replaced per-network health alerts collection with org-level collection, reducing API calls from one per network to one per organization.
+
 ## [0.27.1](https://github.com/rknightion/meraki-dashboard-exporter/compare/v0.27.0...v0.27.1) (2025-12-01)
 
 

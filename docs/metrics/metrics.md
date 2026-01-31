@@ -20,7 +20,6 @@ Some metrics are conditional (clients or webhooks); notes are shown where releva
 | `meraki_alerts_active` | gauge | `org_id`, `org_name`, `network_id`, `network_name`, `alert_type`, `category_type`, `severity`, `device_type` | Number of active Meraki assurance alerts |  |
 | `meraki_alerts_total_by_network` | gauge | `org_id`, `org_name`, `network_id`, `network_name` | Total number of active alerts per network |  |
 | `meraki_alerts_total_by_severity` | gauge | `org_id`, `org_name`, `severity` | Total number of active alerts by severity |  |
-| `meraki_network_health_alerts_total` | gauge | `org_id`, `org_name`, `network_id`, `network_name`, `category`, `severity` | Total number of active network health alerts by category and severity |  |
 | `meraki_sensor_alerts_total` | gauge | `org_id`, `org_name`, `network_id`, `network_name`, `metric` | Total number of sensor alerts in the last hour by metric type |  |
 
 ### ClientsCollector

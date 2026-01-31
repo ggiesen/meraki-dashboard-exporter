@@ -282,11 +282,6 @@ class AlertMetricName(StrEnum):
     ALERTS_TOTAL_BY_NETWORK = "meraki_alerts_total_by_network"
     SENSOR_ALERTS_TOTAL = "meraki_sensor_alerts_total"
 
-    # Health alert metrics (Phase 4.1)
-    ORGANIZATION_HEALTH_ALERTS_TOTAL = "meraki_organization_health_alerts_total"
-    NETWORK_HEALTH_ALERTS_TOTAL = "meraki_network_health_alerts_total"
-    HEALTH_ALERT_INFO = "meraki_health_alert_info"
-
 
 class ConfigMetricName(StrEnum):
     """Configuration metric names."""
