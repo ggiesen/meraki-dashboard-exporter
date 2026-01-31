@@ -37,7 +37,7 @@ Collectors run on FAST/MEDIUM/SLOW tiers configured via `MERAKI_EXPORTER_UPDATE_
 - `MRCollector` — Coordinator for Meraki MR (Wireless AP) device collectors.
 - `MRPerformanceCollector` — Collector for MR wireless performance metrics.
 - `MRWirelessCollector` — Collector for MR wireless radio and SSID metrics.
-- `MSCollector` — Collector for Meraki MS (Switch) devices. Supports org-level bulk collection and SNMP skip mode (see [MS optimization settings](../config.md#ms-switch-optimization-settings)).
+- `MSCollector` — Collector for Meraki MS (Switch) devices.
 - `MTCollector` — Collector for Meraki MT (Sensor) devices.
 - `MVCollector` — Collector for MV security camera metrics.
 - `MXCollector` — Collector for MX security appliance metrics.

@@ -333,28 +333,23 @@ def log_startup_summary(
     else:
         logger.info("  Organization Filter: None (all organizations)")
 
-    # Collector Status
-    all_collectors = ["organization", "device", "network_health", "alerts", "mt_sensor", "config"]
-    enabled = settings.collectors.enabled_collectors
-    disabled = [c for c in all_collectors if c not in enabled]
-
+    # Collector Status - use active_collectors which respects disable_collectors
     # Format collector names for display
     display_names = {
         "organization": "Organization",
         "device": "Device",
-        "network_health": "Network Health",
+        "networkhealth": "Network Health",
         "alerts": "Alerts",
-        "mt_sensor": "MT Sensors",
+        "mtsensor": "MT Sensors",
         "config": "Config Changes",
+        "clients": "Clients",
     }
 
-    enabled_display = [display_names.get(c, c) for c in enabled]
-    disabled_display = [display_names.get(c, c) for c in disabled]
+    active = settings.collectors.active_collectors
+    active_display = sorted([display_names.get(c, c) for c in active])
 
     logger.info(
-        f"  Enabled Collectors: {', '.join(enabled_display) if enabled_display else 'None'}"
+        f"  Active Collectors: {', '.join(active_display) if active_display else 'None'}"
     )
-    if disabled_display:
-        logger.info(f"  Disabled Collectors: {', '.join(disabled_display)}")
 
     logger.info("=" * 80)
