@@ -513,32 +513,53 @@ class DeviceCollector(MetricCollector):
                     )
 
                 if not used_fallback:
-                    await process_in_batches_with_errors(
-                        ms_devices,
-                        self.ms_collector.collect_device_port_usage_metrics,
-                        batch_size=self.settings.api.device_batch_size,
-                        delay_between_batches=self.settings.api.batch_delay,
-                        spread_over_seconds=spread_window,
-                        initial_delay=self._get_smoothing_offset(f"{org_id}:ms_usage"),
-                        min_batch_delay=min_delay,
-                        max_batch_delay=max_delay,
-                        item_description="MS port usage",
-                        error_context_func=lambda device: {"serial": device["serial"]},
-                    )
+                    # Skip per-device port usage calls if SNMP metrics are disabled
+                    # (traffic, usage data are SNMP-available; only client count and POE are not)
+                    if not self.settings.api.ms_skip_snmp_available_metrics:
+                        await process_in_batches_with_errors(
+                            ms_devices,
+                            self.ms_collector.collect_device_port_usage_metrics,
+                            batch_size=self.settings.api.device_batch_size,
+                            delay_between_batches=self.settings.api.batch_delay,
+                            spread_over_seconds=spread_window,
+                            initial_delay=self._get_smoothing_offset(f"{org_id}:ms_usage"),
+                            min_batch_delay=min_delay,
+                            max_batch_delay=max_delay,
+                            item_description="MS port usage",
+                            error_context_func=lambda device: {"serial": device["serial"]},
+                        )
 
-                    # Collect packet statistics
-                    await process_in_batches_with_errors(
-                        ms_devices,
-                        self.ms_collector._collect_packet_statistics,
-                        batch_size=self.settings.api.device_batch_size,
-                        delay_between_batches=self.settings.api.batch_delay,
-                        spread_over_seconds=spread_window,
-                        initial_delay=self._get_smoothing_offset(f"{org_id}:ms_packets"),
-                        min_batch_delay=min_delay,
-                        max_batch_delay=max_delay,
-                        item_description="MS packet stats",
-                        error_context_func=lambda device: {"serial": device["serial"]},
-                    )
+                    # Collect org-level packet stats FIRST (Total/Broadcast/Multicast)
+                    # This populates _org_packet_stats_collected for the per-device calls below
+                    if not self.settings.api.ms_skip_snmp_available_metrics:
+                        try:
+                            await self.ms_collector.collect_packet_stats_by_org(
+                                org_id, org_name, ms_devices
+                            )
+                        except Exception:
+                            logger.exception("Failed to collect org-level packet stats")
+
+                        # Collect per-device error metrics only (CRC, Fragments, Collisions, Topology)
+                        # These are not available via org-level endpoint
+
+                        async def collect_error_metrics_only(device: dict[str, Any]) -> None:
+                            """Wrapper to collect only error metrics via per-device endpoint."""
+                            await self.ms_collector._collect_packet_statistics(
+                                device, error_metrics_only=True
+                            )
+
+                        await process_in_batches_with_errors(
+                            ms_devices,
+                            collect_error_metrics_only,
+                            batch_size=self.settings.api.device_batch_size,
+                            delay_between_batches=self.settings.api.batch_delay,
+                            spread_over_seconds=spread_window,
+                            initial_delay=self._get_smoothing_offset(f"{org_id}:ms_packets"),
+                            min_batch_delay=min_delay,
+                            max_batch_delay=max_delay,
+                            item_description="MS error metrics",
+                            error_context_func=lambda device: {"serial": device["serial"]},
+                        )
 
             # Note: MR per-device collection has been replaced with org/network-level
             # collection for efficiency. Client counts use org-wide endpoint and
@@ -746,18 +767,8 @@ class DeviceCollector(MetricCollector):
 
         """
         try:
-            # Filter to MS devices only
-            ms_devices = [d for d in devices if d.get("model", "").startswith("MS")]
-
-            # Collect org-level packet statistics (hybrid mode)
-            # This collects Total/Broadcast/Multicast packets for all switches at once
-            # Error metrics (CRC, Fragments, Collisions, Topology) are still per-device
-            try:
-                await self.ms_collector.collect_packet_stats_by_org(
-                    org_id, org_name, ms_devices
-                )
-            except Exception:
-                logger.exception("Failed to collect org-level packet stats")
+            # Note: org-level packet stats are now collected in _collect_org_devices()
+            # before per-device error metrics to ensure proper ordering
 
             # Collect STP metrics
             try:

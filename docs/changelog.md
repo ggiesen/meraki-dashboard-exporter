@@ -18,6 +18,8 @@
 ### Performance Improvements
 
 - **alerts:** Replaced per-network health alerts collection with org-level collection, reducing API calls from one per network to one per organization.
+- **ms:** Fixed packet stats collection order to call org-level endpoint before per-device calls, ensuring per-device calls only fetch error metrics (CRC, Fragments, Collisions, Topology changes) instead of duplicating all packet stats. This reduces redundant API calls.
+- **ms:** Skip per-device port usage API calls entirely when `MERAKI_EXPORTER_API__MS_SKIP_SNMP_AVAILABLE_METRICS=true`, significantly reducing API load for users collecting switch metrics via SNMP.
 
 ## [0.27.1](https://github.com/rknightion/meraki-dashboard-exporter/compare/v0.27.0...v0.27.1) (2025-12-01)
 
