@@ -345,19 +345,53 @@ class MSCollector(BaseDeviceCollector):
         if not serials:
             return True
 
-        with LogContext(org_id=org_id):
-            response = await asyncio.to_thread(
-                self.api.switch.getOrganizationSwitchPortsStatusesBySwitch,
-                org_id,
-                serials=serials,
-                perPage=20,
-                total_pages="all",
+        # Batch serials to avoid 502 errors on large deployments
+        batch_size = self.settings.api.org_endpoint_batch_size
+        switches: list[dict[str, Any]] = []
+
+        if batch_size > 0 and len(serials) > batch_size:
+            # Split into batches
+            serial_batches = [
+                serials[i : i + batch_size] for i in range(0, len(serials), batch_size)
+            ]
+            logger.debug(
+                "Batching org-level port status calls",
+                org_id=org_id,
+                total_serials=len(serials),
+                batch_size=batch_size,
+                batch_count=len(serial_batches),
             )
-            switches = validate_response_format(
-                response,
-                expected_type=list,
-                operation="getOrganizationSwitchPortsStatusesBySwitch",
-            )
+
+            for batch_idx, serial_batch in enumerate(serial_batches):
+                with LogContext(org_id=org_id, batch=f"{batch_idx + 1}/{len(serial_batches)}"):
+                    response = await asyncio.to_thread(
+                        self.api.switch.getOrganizationSwitchPortsStatusesBySwitch,
+                        org_id,
+                        serials=serial_batch,
+                        perPage=20,
+                        total_pages="all",
+                    )
+                    batch_switches = validate_response_format(
+                        response,
+                        expected_type=list,
+                        operation="getOrganizationSwitchPortsStatusesBySwitch",
+                    )
+                    switches.extend(batch_switches)
+        else:
+            # Single request for all serials
+            with LogContext(org_id=org_id):
+                response = await asyncio.to_thread(
+                    self.api.switch.getOrganizationSwitchPortsStatusesBySwitch,
+                    org_id,
+                    serials=serials,
+                    perPage=20,
+                    total_pages="all",
+                )
+                switches = validate_response_format(
+                    response,
+                    expected_type=list,
+                    operation="getOrganizationSwitchPortsStatusesBySwitch",
+                )
 
         for switch in switches:
             serial = switch.get("serial")
@@ -459,20 +493,55 @@ class MSCollector(BaseDeviceCollector):
         # Clear the set at the start of each collection cycle
         self._org_packet_stats_collected.clear()
 
-        with LogContext(org_id=org_id):
-            response = await asyncio.to_thread(
-                self.api.switch.getOrganizationSwitchPortsStatusesPacketsByDeviceByPort,
-                org_id,
-                serials=serials,
-                timespan=300,  # 5-minute window
-                perPage=20,
-                total_pages="all",
+        # Batch serials to avoid 502 errors on large deployments
+        batch_size = self.settings.api.org_endpoint_batch_size
+        device_packets: list[dict[str, Any]] = []
+
+        if batch_size > 0 and len(serials) > batch_size:
+            # Split into batches
+            serial_batches = [
+                serials[i : i + batch_size] for i in range(0, len(serials), batch_size)
+            ]
+            logger.debug(
+                "Batching org-level packet stats calls",
+                org_id=org_id,
+                total_serials=len(serials),
+                batch_size=batch_size,
+                batch_count=len(serial_batches),
             )
-            device_packets = validate_response_format(
-                response,
-                expected_type=list,
-                operation="getOrganizationSwitchPortsStatusesPacketsByDeviceByPort",
-            )
+
+            for batch_idx, serial_batch in enumerate(serial_batches):
+                with LogContext(org_id=org_id, batch=f"{batch_idx + 1}/{len(serial_batches)}"):
+                    response = await asyncio.to_thread(
+                        self.api.switch.getOrganizationSwitchPortsStatusesPacketsByDeviceByPort,
+                        org_id,
+                        serials=serial_batch,
+                        timespan=300,  # 5-minute window
+                        perPage=20,
+                        total_pages="all",
+                    )
+                    batch_packets = validate_response_format(
+                        response,
+                        expected_type=list,
+                        operation="getOrganizationSwitchPortsStatusesPacketsByDeviceByPort",
+                    )
+                    device_packets.extend(batch_packets)
+        else:
+            # Single request for all serials
+            with LogContext(org_id=org_id):
+                response = await asyncio.to_thread(
+                    self.api.switch.getOrganizationSwitchPortsStatusesPacketsByDeviceByPort,
+                    org_id,
+                    serials=serials,
+                    timespan=300,  # 5-minute window
+                    perPage=20,
+                    total_pages="all",
+                )
+                device_packets = validate_response_format(
+                    response,
+                    expected_type=list,
+                    operation="getOrganizationSwitchPortsStatusesPacketsByDeviceByPort",
+                )
 
         # Mapping of descriptions to count and rate metrics
         # Only include metrics available from org-level endpoint

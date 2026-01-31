@@ -125,6 +125,14 @@ class APISettings(BaseModel):
         "and error counters (CRC/Fragments/Collisions/Topology). "
         "Enable this if you're already collecting these via SNMP to reduce API calls and avoid duplicates.",
     )
+    org_endpoint_batch_size: int = Field(
+        50,
+        ge=10,
+        le=200,
+        description="Number of devices to request per org-level API call. "
+        "Lower values reduce 502 errors on large deployments but increase API call count. "
+        "Set to 0 to disable batching and request all devices at once.",
+    )
 
 
 class UpdateIntervals(BaseModel):

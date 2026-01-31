@@ -306,19 +306,58 @@ class MXCollector(BaseDeviceCollector):
         """
         self._track_api_call("getOrganizationUplinksStatuses")
 
-        with LogContext(org_id=org_id):
-            response = await asyncio.to_thread(
-                self.api.organizations.getOrganizationUplinksStatuses,
-                org_id,
-                perPage=1000,
-                total_pages="all",
+        # Get network IDs for batching if we have device lookup
+        network_ids: list[str] = []
+        if device_lookup:
+            network_ids = list({d.get("networkId", "") for d in device_lookup.values() if d.get("networkId")})
+
+        # Batch by network IDs to avoid 502 errors on large deployments
+        batch_size = self.settings.api.org_endpoint_batch_size
+        uplink_statuses: list[dict[str, Any]] = []
+
+        if batch_size > 0 and len(network_ids) > batch_size:
+            # Split network IDs into batches
+            network_batches = [
+                network_ids[i : i + batch_size] for i in range(0, len(network_ids), batch_size)
+            ]
+            logger.debug(
+                "Batching org-level uplink status calls",
+                org_id=org_id,
+                total_networks=len(network_ids),
+                batch_size=batch_size,
+                batch_count=len(network_batches),
             )
 
-        uplink_statuses = validate_response_format(
-            response,
-            expected_type=list,
-            operation="getOrganizationUplinksStatuses",
-        )
+            for batch_idx, network_batch in enumerate(network_batches):
+                with LogContext(org_id=org_id, batch=f"{batch_idx + 1}/{len(network_batches)}"):
+                    response = await asyncio.to_thread(
+                        self.api.organizations.getOrganizationUplinksStatuses,
+                        org_id,
+                        networkIds=network_batch,
+                        perPage=1000,
+                        total_pages="all",
+                    )
+                    batch_statuses = validate_response_format(
+                        response,
+                        expected_type=list,
+                        operation="getOrganizationUplinksStatuses",
+                    )
+                    uplink_statuses.extend(batch_statuses)
+        else:
+            # Single request for all devices
+            with LogContext(org_id=org_id):
+                response = await asyncio.to_thread(
+                    self.api.organizations.getOrganizationUplinksStatuses,
+                    org_id,
+                    perPage=1000,
+                    total_pages="all",
+                )
+
+            uplink_statuses = validate_response_format(
+                response,
+                expected_type=list,
+                operation="getOrganizationUplinksStatuses",
+            )
 
         logger.debug(
             "Fetched organization uplink statuses",

@@ -63,13 +63,17 @@ Configuration for Meraki API interactions
 | `MERAKI_EXPORTER_API__RATE_LIMIT_RETRY_WAIT` | `int` | `5` | Wait time in seconds when rate limited (min: 1, max: 60) |
 | `MERAKI_EXPORTER_API__ACTION_BATCH_RETRY_WAIT` | `int` | `10` | Wait time for action batch retries (min: 1, max: 60) |
 
-### MS (Switch) Optimization Settings
+### Large Deployment Optimization Settings
 
-These settings optimize API usage for Meraki switch (MS) metrics collection:
+These settings optimize API usage for large Meraki deployments:
 
 | Environment Variable | Type | Default | Description |
 |---------------------|------|---------|-------------|
+| `MERAKI_EXPORTER_API__ORG_ENDPOINT_BATCH_SIZE` | `int` | `50` | Number of devices to request per org-level API call (min: 10, max: 200, 0 to disable) |
 | `MERAKI_EXPORTER_API__MS_SKIP_SNMP_AVAILABLE_METRICS` | `bool` | `False` | Skip MS metrics also available via SNMP to reduce API calls |
+
+!!! tip "Avoiding 502 Errors on Large Deployments"
+    For deployments with 100+ switches or MX devices, org-level API endpoints may return 502 errors due to backend timeouts. The `ORG_ENDPOINT_BATCH_SIZE` setting splits requests into smaller batches. Lower values (e.g., 30) reduce 502 errors but increase API call count. Set to 0 to disable batching.
 
 !!! tip "SNMP Integration"
     If you're already collecting switch metrics via SNMP, enable `MS_SKIP_SNMP_AVAILABLE_METRICS` to avoid duplicate data and reduce API calls by up to 71%. Metrics skipped include: port status, port traffic, port usage, packet counts, and error counters. Metrics NOT available via SNMP (client count per port, PoE power) are always collected.
