@@ -820,11 +820,11 @@ class MXCollector(BaseDeviceCollector):
             List of MX devices.
 
         """
-        # Filter for MX and Z devices, excluding VMX (virtual) which doesn't support performance API
+        # Filter for physical MX devices only - VMX and Z-series don't support performance API
         mx_devices = [
             d
             for d in devices
-            if (d.get("model", "").startswith("MX") or d.get("model", "").startswith("Z"))
+            if d.get("model", "").startswith("MX")
             and not d.get("model", "").startswith("VMX")
         ]
 

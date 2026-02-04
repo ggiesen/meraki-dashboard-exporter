@@ -516,14 +516,15 @@ class NetworkUplinkUsage(BaseModel):
 class LossAndLatencyEntry(BaseModel):
     """Single entry in loss and latency history."""
 
-    startTime: datetime
-    endTime: datetime
+    # API returns startTs/endTs, not startTime/endTime
+    startTime: datetime | None = Field(default=None, alias="startTs")
+    endTime: datetime | None = Field(default=None, alias="endTs")
     lossPercent: float | None = None
     latencyMs: float | None = None
     goodput: int | None = None
     jitter: float | None = None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 # Response wrapper models
