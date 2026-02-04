@@ -125,6 +125,13 @@ class APISettings(BaseModel):
         "and error counters (CRC/Fragments/Collisions/Topology). "
         "Enable this if you're already collecting these via SNMP to reduce API calls and avoid duplicates.",
     )
+    mr_skip_connection_stats: bool = Field(
+        False,
+        description="Skip MR connection stats collection (getNetworkWirelessDevicesConnectionStats). "
+        "This endpoint requires per-network API calls which can be slow with many networks. "
+        "Enable this to reduce API calls and collection time. "
+        "Skips: meraki_mr_connection_stats_total metric.",
+    )
     org_endpoint_batch_size: int = Field(
         50,
         ge=10,

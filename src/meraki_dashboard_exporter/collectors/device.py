@@ -705,7 +705,8 @@ class DeviceCollector(MetricCollector):
                 logger.exception("Failed to collect wireless client counts")
 
             # Collect connection stats (network-level - replaces per-device getDeviceWirelessConnectionStats)
-            if networks:
+            # Skip if mr_skip_connection_stats is enabled (reduces API calls significantly)
+            if networks and not self.settings.api.mr_skip_connection_stats:
                 try:
                     await self.mr_collector.collect_connection_stats(
                         org_id, org_name, networks, self._device_lookup
