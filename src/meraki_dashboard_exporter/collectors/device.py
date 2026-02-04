@@ -610,17 +610,8 @@ class DeviceCollector(MetricCollector):
             except Exception:
                 logger.exception("Failed to collect memory metrics")
 
-            # Collect MR-specific metrics
-            if any(d for d in devices if d.get("model", "").startswith(DeviceType.MR)):
-                # Use MR collector for all MR-specific metrics
-                await self._collect_mr_specific_metrics(org_id, org_name, devices)
-
-            # Collect MS-specific metrics
-            if any(d for d in devices if d.get("model", "").startswith(DeviceType.MS)):
-                # Use MS collector for all MS-specific metrics
-                await self._collect_ms_specific_metrics(org_id, org_name, devices)
-
-            # Collect MX-specific metrics (includes MX, MG, and Z series for uplinks)
+            # Collect MX-specific metrics FIRST (uses efficient org-level API calls)
+            # Includes MX, MG, and Z series for uplinks
             if any(
                 d
                 for d in devices
@@ -630,6 +621,16 @@ class DeviceCollector(MetricCollector):
             ):
                 # Use MX collector for all MX-specific metrics
                 await self._collect_mx_specific_metrics(org_id, org_name, devices)
+
+            # Collect MR-specific metrics (includes per-network connection stats)
+            if any(d for d in devices if d.get("model", "").startswith(DeviceType.MR)):
+                # Use MR collector for all MR-specific metrics
+                await self._collect_mr_specific_metrics(org_id, org_name, devices)
+
+            # Collect MS-specific metrics
+            if any(d for d in devices if d.get("model", "").startswith(DeviceType.MS)):
+                # Use MS collector for all MS-specific metrics
+                await self._collect_ms_specific_metrics(org_id, org_name, devices)
 
         except Exception as e:
             logger.exception(
