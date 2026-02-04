@@ -820,17 +820,23 @@ class MXCollector(BaseDeviceCollector):
             List of MX devices.
 
         """
+        # Filter for MX and Z devices, excluding VMX (virtual) which doesn't support performance API
         mx_devices = [
             d
             for d in devices
-            if d.get("model", "").startswith("MX") or d.get("model", "").startswith("Z")
+            if (d.get("model", "").startswith("MX") or d.get("model", "").startswith("Z"))
+            and not d.get("model", "").startswith("VMX")
         ]
 
-        logger.debug(
-            "Collecting performance for MX devices",
+        logger.info(
+            "Starting MX device performance collection",
             org_id=org_id,
             device_count=len(mx_devices),
         )
+
+        successful = 0
+        failed = 0
+        error_counts: dict[str, int] = {}
 
         for device in mx_devices:
             serial = device.get("serial", "")
@@ -851,6 +857,7 @@ class MXCollector(BaseDeviceCollector):
                     if perf.perfScore is not None:
                         labels = create_device_labels(device, org_id=org_id, org_name=org_name)
                         self._mx_performance_score.labels(**labels).set(perf.perfScore)
+                        successful += 1
 
                         logger.debug(
                             "Set MX performance score",
@@ -858,17 +865,37 @@ class MXCollector(BaseDeviceCollector):
                             perf_score=perf.perfScore,
                         )
 
-            except Exception:
+            except Exception as e:
+                failed += 1
+                # Track error types for summary
+                error_type = type(e).__name__
+                error_msg = str(e)
+                # Extract HTTP status code if present
+                if "400" in error_msg:
+                    error_key = "400 Bad Request"
+                elif "404" in error_msg:
+                    error_key = "404 Not Found"
+                elif "429" in error_msg:
+                    error_key = "429 Rate Limited"
+                else:
+                    error_key = error_type
+                error_counts[error_key] = error_counts.get(error_key, 0) + 1
+
                 logger.debug(
-                    "Failed to get performance for device (may be secondary/spare)",
+                    "Failed to get performance for device",
                     serial=serial,
+                    model=device.get("model", ""),
+                    error=error_msg[:100],  # Truncate long errors
                 )
 
         logger.info(
-            "Collected MX device performance",
+            "Completed MX device performance collection",
             org_id=org_id,
             org_name=org_name,
             devices_processed=len(mx_devices),
+            successful=successful,
+            failed=failed,
+            error_summary=error_counts if error_counts else None,
         )
 
     # =========================================================================
