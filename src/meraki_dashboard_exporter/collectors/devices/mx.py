@@ -989,33 +989,58 @@ class MXCollector(BaseDeviceCollector):
             or d.get("model", "").startswith("Z")
         ]
 
-        logger.debug(
-            "Collecting loss/latency for MX devices",
+        logger.info(
+            "Starting loss/latency collection for MX devices",
             org_id=org_id,
             device_count=len(mx_devices),
             destination_ip=destination_ip,
         )
 
-        for device in mx_devices:
+        successful_metrics = 0
+        failed_devices = 0
+
+        for idx, device in enumerate(mx_devices):
             serial = device.get("serial", "")
             if not serial:
                 continue
 
+            device_success = False
             # Try each uplink interface
             for uplink in ["wan1", "wan2", "cellular"]:
                 try:
                     await self._collect_device_loss_latency(
                         device, org_id, org_name, uplink, destination_ip
                     )
-                except Exception:
-                    # Silent fail for individual uplinks - device may not have all
-                    pass
+                    device_success = True
+                    successful_metrics += 1
+                except Exception as e:
+                    # Log at debug level - device may not have all uplinks
+                    logger.debug(
+                        "Failed to collect loss/latency for uplink",
+                        serial=serial,
+                        uplink=uplink,
+                        error=str(e),
+                    )
+
+            if not device_success:
+                failed_devices += 1
+
+            # Log progress every 50 devices
+            if (idx + 1) % 50 == 0:
+                logger.debug(
+                    "Loss/latency collection progress",
+                    processed=idx + 1,
+                    total=len(mx_devices),
+                    successful_metrics=successful_metrics,
+                )
 
         logger.info(
-            "Collected MX loss and latency",
+            "Completed MX loss and latency collection",
             org_id=org_id,
             org_name=org_name,
             devices_processed=len(mx_devices),
+            successful_metrics=successful_metrics,
+            failed_devices=failed_devices,
         )
 
     @log_api_call("getDeviceLossAndLatencyHistory")
@@ -1042,6 +1067,11 @@ class MXCollector(BaseDeviceCollector):
             )
 
         if not response:
+            logger.debug(
+                "No response from loss/latency API",
+                serial=serial,
+                uplink=uplink,
+            )
             return
 
         entries = validate_response_format(
@@ -1051,6 +1081,11 @@ class MXCollector(BaseDeviceCollector):
         )
 
         if not entries:
+            logger.debug(
+                "Empty entries from loss/latency API",
+                serial=serial,
+                uplink=uplink,
+            )
             return
 
         # Use most recent entry
