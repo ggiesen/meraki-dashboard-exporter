@@ -63,6 +63,7 @@ class OrganizationInventory:
     # Longer TTL for slow-changing configuration data
     TTL_LICENSE = 1800  # 30 minutes - license data rarely changes
     TTL_CONFIG = 3600  # 60 minutes - org config/security settings rarely change
+    TTL_SSID = 1800  # 30 minutes - SSID configuration rarely changes
 
     def __init__(
         self, api: DashboardAPI, settings: Settings, rate_limiter: Any | None = None
@@ -94,6 +95,8 @@ class OrganizationInventory:
         self._device_availabilities: dict[str, list[dict[str, Any]]] = {}
         self._licenses_overview: dict[str, dict[str, Any]] = {}
         self._login_security: dict[str, dict[str, Any]] = {}
+        # SSID to network mapping: org_id -> ssid_name -> list of {id, name}
+        self._ssid_mappings: dict[str, dict[str, list[dict[str, str]]]] = {}
 
         # Cache timestamps
         self._org_timestamp: float = 0.0
@@ -102,6 +105,7 @@ class OrganizationInventory:
         self._availability_timestamps: dict[str, float] = {}
         self._license_timestamps: dict[str, float] = {}
         self._security_timestamps: dict[str, float] = {}
+        self._ssid_timestamps: dict[str, float] = {}
 
         # Lock for thread-safe cache updates
         self._lock = asyncio.Lock()
@@ -503,12 +507,14 @@ class OrganizationInventory:
                 self._device_availabilities.clear()
                 self._licenses_overview.clear()
                 self._login_security.clear()
+                self._ssid_mappings.clear()
                 self._org_timestamp = 0.0
                 self._network_timestamps.clear()
                 self._device_timestamps.clear()
                 self._availability_timestamps.clear()
                 self._license_timestamps.clear()
                 self._security_timestamps.clear()
+                self._ssid_timestamps.clear()
                 logger.info("Invalidated all inventory cache")
             else:
                 # Invalidate specific org
@@ -522,6 +528,8 @@ class OrganizationInventory:
                     del self._licenses_overview[org_id]
                 if org_id in self._login_security:
                     del self._login_security[org_id]
+                if org_id in self._ssid_mappings:
+                    del self._ssid_mappings[org_id]
                 if org_id in self._network_timestamps:
                     del self._network_timestamps[org_id]
                 if org_id in self._device_timestamps:
@@ -532,6 +540,8 @@ class OrganizationInventory:
                     del self._license_timestamps[org_id]
                 if org_id in self._security_timestamps:
                     del self._security_timestamps[org_id]
+                if org_id in self._ssid_timestamps:
+                    del self._ssid_timestamps[org_id]
                 logger.info("Invalidated inventory cache for organization", org_id=org_id)
 
     def get_cache_stats(self) -> dict[str, Any]:
@@ -557,6 +567,7 @@ class OrganizationInventory:
             "cached_availabilities": len(self._device_availabilities),
             "cached_licenses": len(self._licenses_overview),
             "cached_security": len(self._login_security),
+            "cached_ssid_mappings": len(self._ssid_mappings),
         }
 
     def set_ttl_for_tier(self, tier: UpdateTier) -> None:
@@ -807,6 +818,150 @@ class OrganizationInventory:
                 # Return empty dict on error, don't cache errors
                 logger.debug(
                     "Failed to fetch login security",
+                    org_id=org_id,
+                )
+                return {}
+
+    async def get_ssid_to_network_mapping(
+        self,
+        org_id: str,
+        force_refresh: bool = False,
+    ) -> dict[str, list[dict[str, str]]]:
+        """Get SSID to network mapping with caching.
+
+        Builds a mapping of SSID names to the networks they are configured on.
+        Uses a longer TTL (30 minutes) since SSID configuration rarely changes.
+
+        This eliminates the need for per-network getNetworkWirelessSsids calls
+        on every collection cycle - the mapping is cached and reused.
+
+        Parameters
+        ----------
+        org_id : str
+            Organization ID.
+        force_refresh : bool
+            If True, bypass cache and fetch fresh data.
+
+        Returns
+        -------
+        dict[str, list[dict[str, str]]]
+            Mapping of SSID names to list of networks with that SSID.
+            Each network entry has 'id' and 'name' keys.
+
+        Examples
+        --------
+        >>> mapping = await inventory.get_ssid_to_network_mapping(org_id)
+        >>> networks_with_ssid = mapping.get("Corporate WiFi", [])
+        >>> for network in networks_with_ssid:
+        ...     print(f"{network['name']} ({network['id']})")
+
+        """
+        current_time = time.time()
+
+        # Check cache validity (using longer TTL for SSID config)
+        cache_timestamp = self._ssid_timestamps.get(org_id, 0.0)
+        if (
+            not force_refresh
+            and org_id in self._ssid_mappings
+            and (current_time - cache_timestamp) < self.TTL_SSID
+        ):
+            self._cache_hits += 1
+            logger.debug(
+                "Cache hit for SSID mapping",
+                org_id=org_id,
+                cache_age_seconds=current_time - cache_timestamp,
+            )
+            return self._ssid_mappings[org_id]
+
+        # Cache miss - fetch from API
+        self._cache_misses += 1
+        logger.debug("Cache miss for SSID mapping, fetching from API", org_id=org_id)
+
+        async with self._lock:
+            # Double-check after acquiring lock
+            cache_timestamp = self._ssid_timestamps.get(org_id, 0.0)
+            if (
+                not force_refresh
+                and org_id in self._ssid_mappings
+                and (current_time - cache_timestamp) < self.TTL_SSID
+            ):
+                return self._ssid_mappings[org_id]
+
+            # Build the mapping
+            ssid_to_networks: dict[str, list[dict[str, str]]] = {}
+
+            try:
+                # Get networks from cache (already has TTL protection)
+                networks = await self.get_networks(org_id)
+
+                # Filter to wireless networks
+                wireless_networks = [
+                    n for n in networks if "wireless" in n.get("productTypes", [])
+                ]
+
+                if not wireless_networks:
+                    logger.debug(
+                        "No wireless networks found for SSID mapping",
+                        org_id=org_id,
+                    )
+                    self._ssid_mappings[org_id] = {}
+                    self._ssid_timestamps[org_id] = current_time
+                    return {}
+
+                logger.debug(
+                    "Building SSID mapping for wireless networks",
+                    org_id=org_id,
+                    wireless_network_count=len(wireless_networks),
+                )
+
+                # Get SSIDs for each wireless network
+                for network in wireless_networks:
+                    network_id = network.get("id", "")
+                    network_name = network.get("name", network_id)
+
+                    try:
+                        await self._acquire_rate_limit(org_id, "getNetworkWirelessSsids")
+                        ssids_result = await self._make_api_call(
+                            "getNetworkWirelessSsids",
+                            self.api.wireless.getNetworkWirelessSsids,
+                            network_id,
+                        )
+                        ssids = cast(list[dict[str, Any]], ssids_result)
+
+                        for ssid in ssids:
+                            ssid_name = ssid.get("name", "")
+                            if ssid_name:
+                                if ssid_name not in ssid_to_networks:
+                                    ssid_to_networks[ssid_name] = []
+                                ssid_to_networks[ssid_name].append({
+                                    "id": network_id,
+                                    "name": network_name,
+                                })
+
+                    except Exception:
+                        logger.debug(
+                            "Failed to get SSIDs for network",
+                            org_id=org_id,
+                            network_id=network_id,
+                        )
+                        continue
+
+                # Update cache
+                self._ssid_mappings[org_id] = ssid_to_networks
+                self._ssid_timestamps[org_id] = current_time
+
+                logger.info(
+                    "Updated SSID mapping cache",
+                    org_id=org_id,
+                    ssid_count=len(ssid_to_networks),
+                    network_count=len(wireless_networks),
+                )
+
+                return ssid_to_networks
+
+            except Exception:
+                logger.exception(
+                    "Failed to build SSID mapping",
                     org_id=org_id,
                 )
                 return {}

@@ -33,7 +33,7 @@ def create_device_labels(
 
     """
     serial = device.get("serial", "")
-    name = device.get("name", serial)
+    name = device.get("name") or serial  # Handle explicit None values
     model = device.get("model", "")
     network_id = device.get("networkId", "")
     network_name = device.get("networkName", network_id)

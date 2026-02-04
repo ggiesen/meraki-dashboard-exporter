@@ -278,70 +278,6 @@ class MRWirelessCollector:
                 org_id=org_id,
             )
 
-    async def _build_ssid_to_network_mapping(self, org_id: str) -> dict[str, list[dict[str, str]]]:
-        """Build mapping of SSID names to networks.
-
-        Parameters
-        ----------
-        org_id : str
-            Organization ID.
-
-        Returns
-        -------
-        dict[str, list[dict[str, str]]]
-            Mapping of SSID names to list of networks with that SSID.
-
-        """
-        ssid_to_networks: dict[str, list[dict[str, str]]] = {}
-
-        try:
-            with LogContext(org_id=org_id):
-                networks = await asyncio.to_thread(
-                    self.api.organizations.getOrganizationNetworks,
-                    org_id,
-                )
-
-            # Filter for wireless networks
-            wireless_networks = [n for n in networks if "wireless" in n.get("productTypes", [])]
-
-            # Get SSIDs for each network
-            for network in wireless_networks:
-                network_id = network.get("id", "")
-                network_name = network.get("name", network_id)
-
-                try:
-                    with LogContext(network_id=network_id):
-                        ssids = await asyncio.to_thread(
-                            self.api.wireless.getNetworkWirelessSsids,
-                            network_id,
-                        )
-
-                    for ssid in ssids:
-                        ssid_name = ssid.get("name", "")
-                        if ssid_name:
-                            if ssid_name not in ssid_to_networks:
-                                ssid_to_networks[ssid_name] = []
-                            ssid_to_networks[ssid_name].append({
-                                "id": network_id,
-                                "name": network_name,
-                            })
-
-                except Exception:
-                    logger.exception(
-                        "Failed to get SSIDs for network",
-                        network_id=network_id,
-                    )
-                    continue
-
-            return ssid_to_networks
-
-        except Exception:
-            logger.exception(
-                "Failed to build SSID to network mapping",
-                org_id=org_id,
-            )
-            return {}
-
     @log_api_call("getOrganizationSummaryTopSsidsByUsage")
     @with_error_handling(
         operation="Collect SSID usage",
@@ -371,8 +307,12 @@ class MRWirelessCollector:
                     operation="getOrganizationSummaryTopSsidsByUsage",
                 )
 
-            # Build SSID to network mapping for better labeling
-            ssid_to_networks = await self._build_ssid_to_network_mapping(org_id)
+            # Get SSID to network mapping from inventory cache
+            ssid_to_networks = {}
+            if self.parent.inventory:
+                ssid_to_networks = await self.parent.inventory.get_ssid_to_network_mapping(
+                    org_id
+                )
 
             # Process SSID usage data
             for ssid_data in ssid_usage:
