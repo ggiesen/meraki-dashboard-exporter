@@ -346,7 +346,12 @@ class OrganizationCollector(MetricCollector):
 
         """
         try:
-            networks = await self.api_helper.get_organization_networks(org_id)
+            # Use inventory cache if available
+            if self.inventory:
+                logger.debug("Using inventory cache for networks", org_id=org_id)
+                networks = await self.inventory.get_networks(org_id)
+            else:
+                networks = await self.api_helper.get_organization_networks(org_id)
             if not networks:
                 logger.warning("No networks found or error fetching networks", org_id=org_id)
                 return
@@ -386,14 +391,18 @@ class OrganizationCollector(MetricCollector):
 
         """
         try:
-            devices = await self.api_helper.get_organization_devices(org_id)
+            # Use inventory cache if available
+            if self.inventory:
+                logger.debug("Using inventory cache for devices", org_id=org_id)
+                devices = await self.inventory.get_devices(org_id)
+            else:
+                devices = await self.api_helper.get_organization_devices(org_id)
+                # Validate response format (handles API error responses like rate limits)
+                devices = validate_response_format(
+                    devices, expected_type=list, operation="getOrganizationDevices"
+                )
             if not devices:
                 return
-
-            # Validate response format (handles API error responses like rate limits)
-            devices = validate_response_format(
-                devices, expected_type=list, operation="getOrganizationDevices"
-            )
 
             # Count devices by type
             device_counts: dict[str, int] = {}
