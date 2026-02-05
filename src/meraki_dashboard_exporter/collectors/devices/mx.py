@@ -699,7 +699,7 @@ class MXCollector(BaseDeviceCollector):
                     org_id,
                     perPage=300,
                     total_pages="all",
-                    timespan=75600,  # 21 hours - limit for large orgs without batching
+                    timespan=86400,  # 24 hours - large orgs should enable batching
                 )
 
             vpn_stats_list = validate_response_format(
