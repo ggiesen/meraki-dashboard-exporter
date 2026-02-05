@@ -818,7 +818,9 @@ class DeviceCollector(MetricCollector):
 
             # Collect VPN performance statistics
             try:
-                await self.mx_collector.collect_vpn_stats(org_id, org_name)
+                await self.mx_collector.collect_vpn_stats(
+                    org_id, org_name, self._device_lookup
+                )
             except Exception:
                 logger.exception("Failed to collect VPN stats")
 

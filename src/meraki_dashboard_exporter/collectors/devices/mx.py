@@ -637,6 +637,7 @@ class MXCollector(BaseDeviceCollector):
         self,
         org_id: str,
         org_name: str,
+        device_lookup: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Collect VPN performance statistics for all networks in an organization.
 
@@ -646,24 +647,66 @@ class MXCollector(BaseDeviceCollector):
             Organization ID.
         org_name : str
             Organization name.
+        device_lookup : dict[str, dict[str, Any]] | None
+            Device lookup table for extracting network IDs for batching.
 
         """
         self._track_api_call("getOrganizationApplianceVpnStats")
 
-        with LogContext(org_id=org_id):
-            response = await asyncio.to_thread(
-                self.api.appliance.getOrganizationApplianceVpnStats,
-                org_id,
-                perPage=300,
-                total_pages="all",
-                timespan=75600,  # Last 21 hours (API limit for large orgs)
+        # Get network IDs for batching if we have device lookup
+        network_ids: list[str] = []
+        if device_lookup:
+            network_ids = list({d.get("network_id", "") for d in device_lookup.values() if d.get("network_id")})
+
+        # Batch by network IDs to avoid timespan errors on large organizations
+        batch_size = self.settings.api.org_endpoint_batch_size
+        vpn_stats_list: list[dict[str, Any]] = []
+
+        if batch_size > 0 and len(network_ids) > batch_size:
+            # Split network IDs into batches
+            network_batches = [
+                network_ids[i : i + batch_size] for i in range(0, len(network_ids), batch_size)
+            ]
+            logger.debug(
+                "Batching org-level VPN stats calls",
+                org_id=org_id,
+                total_networks=len(network_ids),
+                batch_size=batch_size,
+                batch_count=len(network_batches),
             )
 
-        vpn_stats_list = validate_response_format(
-            response,
-            expected_type=list,
-            operation="getOrganizationApplianceVpnStats",
-        )
+            for batch_idx, network_batch in enumerate(network_batches):
+                with LogContext(org_id=org_id, batch=f"{batch_idx + 1}/{len(network_batches)}"):
+                    response = await asyncio.to_thread(
+                        self.api.appliance.getOrganizationApplianceVpnStats,
+                        org_id,
+                        networkIds=network_batch,
+                        perPage=300,
+                        total_pages="all",
+                        timespan=86400,  # 24 hours - safe with batching
+                    )
+                    batch_stats = validate_response_format(
+                        response,
+                        expected_type=list,
+                        operation="getOrganizationApplianceVpnStats",
+                    )
+                    vpn_stats_list.extend(batch_stats)
+        else:
+            # Single request for all networks (small org or no batching configured)
+            with LogContext(org_id=org_id):
+                response = await asyncio.to_thread(
+                    self.api.appliance.getOrganizationApplianceVpnStats,
+                    org_id,
+                    perPage=300,
+                    total_pages="all",
+                    timespan=75600,  # 21 hours - limit for large orgs without batching
+                )
+
+            vpn_stats_list = validate_response_format(
+                response,
+                expected_type=list,
+                operation="getOrganizationApplianceVpnStats",
+            )
 
         logger.debug(
             "Fetched organization VPN stats",
