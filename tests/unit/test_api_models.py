@@ -14,6 +14,7 @@ from meraki_dashboard_exporter.core.api_models import (
     Device,
     DeviceStatus,
     License,
+    LossAndLatencyEntry,
     MemoryUsage,
     Network,
     NetworkClient,
@@ -668,3 +669,97 @@ class TestPaginatedResponse:
         )
         assert response.items == []
         assert response.meta == {"custom": "field"}
+
+
+class TestLossAndLatencyEntry:
+    """Test LossAndLatencyEntry model."""
+
+    def test_loss_and_latency_basic(self):
+        """Test basic loss and latency entry."""
+        entry = LossAndLatencyEntry(
+            lossPercent=0.5,
+            latencyMs=25.3,
+        )
+        assert entry.lossPercent == 0.5
+        assert entry.latencyMs == 25.3
+        assert entry.startTime is None
+        assert entry.endTime is None
+        assert entry.goodput is None
+        assert entry.jitter is None
+
+    def test_loss_and_latency_full(self):
+        """Test loss and latency entry with all fields."""
+        ts_start = datetime.now(UTC)
+        ts_end = datetime.now(UTC)
+
+        entry = LossAndLatencyEntry(
+            startTime=ts_start,
+            endTime=ts_end,
+            lossPercent=1.5,
+            latencyMs=30.0,
+            goodput=50000,
+            jitter=2.5,
+        )
+        assert entry.startTime == ts_start
+        assert entry.endTime == ts_end
+        assert entry.lossPercent == 1.5
+        assert entry.latencyMs == 30.0
+        assert entry.goodput == 50000
+        assert entry.jitter == 2.5
+
+    def test_loss_and_latency_with_api_field_names(self):
+        """Test that API field names (startTs/endTs) work via aliases."""
+        ts_start = datetime.now(UTC)
+        ts_end = datetime.now(UTC)
+
+        # API returns startTs/endTs, not startTime/endTime
+        entry = LossAndLatencyEntry.model_validate({
+            "startTs": ts_start.isoformat(),
+            "endTs": ts_end.isoformat(),
+            "lossPercent": 2.0,
+            "latencyMs": 45.5,
+            "goodput": 75000,
+            "jitter": 3.2,
+        })
+
+        assert entry.startTime is not None
+        assert entry.endTime is not None
+        assert entry.lossPercent == 2.0
+        assert entry.latencyMs == 45.5
+        assert entry.goodput == 75000
+        assert entry.jitter == 3.2
+
+    def test_loss_and_latency_populate_by_name(self):
+        """Test that both canonical names and aliases work (populate_by_name=True)."""
+        ts = datetime.now(UTC)
+
+        # Using canonical names (startTime/endTime) should also work
+        entry = LossAndLatencyEntry(
+            startTime=ts,
+            endTime=ts,
+            lossPercent=0.0,
+            latencyMs=10.0,
+        )
+        assert entry.startTime == ts
+        assert entry.endTime == ts
+
+    def test_loss_and_latency_extra_fields_allowed(self):
+        """Test that extra fields from API are allowed."""
+        entry = LossAndLatencyEntry.model_validate({
+            "lossPercent": 1.0,
+            "latencyMs": 20.0,
+            "extraField": "should be allowed",
+            "anotherExtra": 123,
+        })
+        assert entry.lossPercent == 1.0
+        assert entry.latencyMs == 20.0
+
+    def test_loss_and_latency_none_values(self):
+        """Test that all fields can be None."""
+        entry = LossAndLatencyEntry()
+        assert entry.startTime is None
+        assert entry.endTime is None
+        assert entry.lossPercent is None
+        assert entry.latencyMs is None
+        assert entry.goodput is None
+        assert entry.jitter is None
