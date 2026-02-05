@@ -836,12 +836,28 @@ class MXCollector(BaseDeviceCollector):
 
         successful = 0
         failed = 0
+        skipped_spare = 0
         error_counts: dict[str, int] = {}
 
         for device in mx_devices:
             serial = device.get("serial", "")
             if not serial:
                 continue
+
+            # Skip warm spare HA devices - the performance API doesn't support them
+            if serial in self._uplink_status_cache:
+                uplink_status = self._uplink_status_cache[serial]
+                if (
+                    uplink_status.highAvailability
+                    and uplink_status.highAvailability.enabled
+                    and uplink_status.highAvailability.role == "spare"
+                ):
+                    skipped_spare += 1
+                    logger.debug(
+                        "Skipping performance collection for HA spare device",
+                        serial=serial,
+                    )
+                    continue
 
             try:
                 self._track_api_call("getDeviceAppliancePerformance")
@@ -895,6 +911,7 @@ class MXCollector(BaseDeviceCollector):
             devices_processed=len(mx_devices),
             successful=successful,
             failed=failed,
+            skipped_ha_spare=skipped_spare,
             error_summary=error_counts if error_counts else None,
         )
 
