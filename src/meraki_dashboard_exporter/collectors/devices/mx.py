@@ -637,7 +637,6 @@ class MXCollector(BaseDeviceCollector):
         self,
         org_id: str,
         org_name: str,
-        device_lookup: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Collect VPN performance statistics for all networks in an organization.
 
@@ -647,16 +646,13 @@ class MXCollector(BaseDeviceCollector):
             Organization ID.
         org_name : str
             Organization name.
-        device_lookup : dict[str, dict[str, Any]] | None
-            Device lookup table for extracting network IDs for batching.
 
         """
         self._track_api_call("getOrganizationApplianceVpnStats")
 
-        # Get network IDs for batching if we have device lookup
-        network_ids: list[str] = []
-        if device_lookup:
-            network_ids = list({d.get("network_id", "") for d in device_lookup.values() if d.get("network_id")})
+        # Get VPN-enabled network IDs from _network_lookup (populated by collect_vpn_statuses)
+        # This ensures we only query networks that have Site-to-Site VPN enabled
+        network_ids: list[str] = list(self._network_lookup.keys())
 
         # Batch by network IDs to avoid timespan errors on large organizations
         batch_size = self.settings.api.org_endpoint_batch_size
