@@ -656,7 +656,7 @@ class MXCollector(BaseDeviceCollector):
                 org_id,
                 perPage=300,
                 total_pages="all",
-                timespan=86400,  # Last 24 hours
+                timespan=75600,  # Last 21 hours (API limit for large orgs)
             )
 
         vpn_stats_list = validate_response_format(
